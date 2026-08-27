@@ -16,12 +16,14 @@ export default async function DashboardPage() {
     { data: timeEntriesMonth },
     { data: upsell },
     { data: projects },
+    { data: lastEntries },
   ] = await Promise.all([
     supabase.from("customers").select("*"),
     supabase.from("retainers").select("*, customers(name)").eq("status", "Aktiv"),
     supabase.from("time_entries").select("*").gte("entry_date", start).lte("entry_date", end),
     supabase.from("upsell_opportunities").select("*, customers(name)"),
     supabase.from("projects").select("*").eq("status", "Pågår"),
+    supabase.from("time_entries").select("customer_id, entry_date").order("entry_date", { ascending: false }),
   ]);
 
   const retainerList = retainers ?? [];
@@ -80,6 +82,20 @@ export default async function DashboardPage() {
     .sort((a, b) => (a.renewal_date! > b.renewal_date! ? 1 : -1));
 
   const topOpen = [...openUpsell].sort((a, b) => Number(b.value) - Number(a.value)).slice(0, 6);
+
+  const lastSeen = new Map<string, string>();
+  (lastEntries ?? []).forEach((e) => {
+    if (e.customer_id && !lastSeen.has(e.customer_id)) lastSeen.set(e.customer_id, e.entry_date);
+  });
+  const in30Days = new Date();
+  in30Days.setDate(in30Days.getDate() - 30);
+  const stilleKunder = retainerList
+    .map((r) => {
+      const siste = lastSeen.get(r.customer_id);
+      return { ...r, siste };
+    })
+    .filter((r) => !r.siste || new Date(r.siste) < in30Days)
+    .sort((a, b) => (a.siste ?? "").localeCompare(b.siste ?? ""));
 
   return (
     <div className="flex flex-col gap-6">
@@ -146,6 +162,21 @@ export default async function DashboardPage() {
                 key={r.id}
                 venstre={(r as any).customers?.name ?? "—"}
                 hoyre={pct(r.forbruk)}
+              />
+            ))
+          )}
+        </Block>
+
+        <Block tittel="STILLE KUNDER (INGEN TIMER PÅ 30+ DAGER)" accent="rose">
+          {stilleKunder.length === 0 ? (
+            <Tom tekst="Alle aktive retainere har fersk timeføring ✓" />
+          ) : (
+            stilleKunder.map((r) => (
+              <Rad
+                key={r.id}
+                venstre={(r as any).customers?.name ?? "—"}
+                hoyre={r.siste ? dato(r.siste) : "Aldri ført"}
+                fremhevet
               />
             ))
           )}

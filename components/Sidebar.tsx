@@ -11,6 +11,7 @@ import {
   TrendingUp,
   Briefcase,
   BarChart3,
+  Receipt,
   LogOut,
 } from "lucide-react";
 
@@ -21,6 +22,7 @@ const LENKER = [
   { href: "/retainere", label: "Retainere", icon: Repeat },
   { href: "/mersalg", label: "Mersalg", icon: TrendingUp },
   { href: "/prosjekter", label: "Prosjekter", icon: Briefcase },
+  { href: "/fakturering", label: "Fakturering", icon: Receipt },
   { href: "/rapporter", label: "Rapporter", icon: BarChart3 },
 ];
 

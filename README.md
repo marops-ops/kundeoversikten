@@ -65,7 +65,7 @@ Direkte videreført fra `Amidays-Kunderegister.gs`:
 | `upsell_opportunities` | Mersalg |
 | `projects` | Prosjekter |
 | `customer_services` | Tjenestematrise |
-| `invoices` | Fakturering (klar i databasen, ikke bygget i UI ennå — fase 2) |
+| `invoices` | Fakturering |
 
 ## Automatikk som er bygget inn
 
@@ -73,10 +73,10 @@ Direkte videreført fra `Amidays-Kunderegister.gs`:
 - **Vunnet mersalg → automatisk avhuking.** Flytter du et mersalgskort til "Vunnet" og det er knyttet til en tjeneste, settes tjenesten automatisk til "Implementert".
 - **Ledig kapasitet-varsel** på dashboardet: retainere under 60 % timeforbruk vises som mulig kapasitet for mersalg/prosjekter.
 - **Over budsjett-varsel**: retainere over 85 % forbruk flagges på dashboardet.
+- **Stille kunder-varsel**: aktive retainere uten timeføring de siste 30 dagene flagges på dashboardet.
 
 ## Foreslåtte neste steg (ikke bygget ennå)
 
-- Fakturering-fane i UI (tabellen finnes i databasen)
-- "Stille kunder"-varsel: aktiv retainer uten timeføring på 30+ dager
 - PDF-eksport av kvartalsrapport
-- E-postvarsel ved 85 %+ timeforbruk (kan gjøres med en Supabase Edge Function + cron)
+- E-postvarsel ved 85 %+ timeforbruk eller stille kunder (Supabase Edge Function + cron)
+- Enkel "produktivitet"-graf: timer brukt vs. fakturert over tid
