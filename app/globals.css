@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+:root {
+  --color-dark: #31353d;
+  --color-charcoal: #707677;
+  --color-sage: #6a6d62;
+  --color-brown: #af8e72;
+  --color-rose: #c48374;
+  --color-graygreen: #a4a599;
+  --color-lightsage: #c6c6b7;
+  --color-beige: #d3cbbb;
+  --color-cream: #f1efe9;
+  --color-canvas: #dedacf;
+  --color-white: #ffffff;
+}
+
+@theme inline {
+  --color-dark: var(--color-dark);
+  --color-charcoal: var(--color-charcoal);
+  --color-sage: var(--color-sage);
+  --color-brown: var(--color-brown);
+  --color-rose: var(--color-rose);
+  --color-graygreen: var(--color-graygreen);
+  --color-lightsage: var(--color-lightsage);
+  --color-beige: var(--color-beige);
+  --color-cream: var(--color-cream);
+  --color-canvas: var(--color-canvas);
+  --font-display: "Montserrat", sans-serif;
+  --font-body: "Roboto", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--color-canvas);
+  color: var(--color-dark);
+  font-family: var(--font-body);
+  font-weight: 300;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-lightsage);
+  border-radius: 4px;
+}
+
+input,
+select,
+textarea,
+button {
+  font-family: var(--font-body);
+}
+
+.font-display {
+  font-family: var(--font-display);
+}

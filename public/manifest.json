@@ -1,0 +1,9 @@
+{
+  "name": "Amidays Kunderegister",
+  "short_name": "Kunderegister",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#DEDACF",
+  "theme_color": "#31353D",
+  "icons": []
+}
