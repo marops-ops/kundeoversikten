@@ -2,7 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Customer, UpsellOpportunity, MERSALG_KOLONNER, Mersalgsstatus, ALLE_TJENESTER } from "@/lib/types";
+import {
+  Customer,
+  UpsellOpportunity,
+  MERSALG_KOLONNER,
+  Mersalgsstatus,
+  ALLE_TJENESTER,
+  ProductCatalogItem,
+} from "@/lib/types";
 import Modal from "@/components/Modal";
 import { inputCls, labelCls, btnPrimary } from "@/lib/ui";
 import { kr, pct, dato } from "@/lib/format";
@@ -12,16 +19,19 @@ export default function MersalgPage() {
   const supabase = createClient();
   const [kunder, setKunder] = useState<Customer[]>([]);
   const [muligheter, setMuligheter] = useState<(UpsellOpportunity & { customers?: { name: string } })[]>([]);
+  const [katalog, setKatalog] = useState<ProductCatalogItem[]>([]);
   const [modalApen, setModalApen] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
 
   async function hent() {
-    const [{ data: k }, { data: m }] = await Promise.all([
+    const [{ data: k }, { data: m }, { data: p }] = await Promise.all([
       supabase.from("customers").select("*").order("name"),
       supabase.from("upsell_opportunities").select("*, customers(name)").order("created_at", { ascending: false }),
+      supabase.from("product_catalog").select("*").order("category").order("name"),
     ]);
     setKunder(k ?? []);
     setMuligheter((m as any) ?? []);
+    setKatalog(p ?? []);
   }
 
   useEffect(() => {
@@ -85,6 +95,9 @@ export default function MersalgPage() {
                       <span className="text-[10.5px] text-charcoal">{pct(Number(m.probability))}</span>
                     </div>
                     {m.deadline && <div className="text-[10px] text-rose mt-1">Frist {dato(m.deadline)}</div>}
+                    {m.status === "Vunnet" && (
+                      <div className="text-[10px] text-sage mt-1">→ Opprettet som prosjekt automatisk</div>
+                    )}
                     <div className="flex gap-1 mt-2 flex-wrap">
                       {MERSALG_KOLONNER.filter((s) => s !== m.status).map((s) => (
                         <button
@@ -107,6 +120,7 @@ export default function MersalgPage() {
       {modalApen && (
         <NyttForslagModal
           kunder={kunder}
+          katalog={katalog}
           onClose={() => setModalApen(false)}
           onSaved={() => {
             setModalApen(false);
@@ -118,17 +132,23 @@ export default function MersalgPage() {
   );
 }
 
+const MANUELT_VALG = "__manuelt__";
+
 function NyttForslagModal({
   kunder,
+  katalog,
   onClose,
   onSaved,
 }: {
   kunder: Customer[];
+  katalog: ProductCatalogItem[];
   onClose: () => void;
   onSaved: () => void;
 }) {
   const supabase = createClient();
   const [lagrer, setLagrer] = useState(false);
+  const [produktvalg, setProduktvalg] = useState<string>(MANUELT_VALG);
+  const [lagreINyKatalog, setLagreINyKatalog] = useState(false);
   const [form, setForm] = useState({
     customer_id: "",
     title: "",
@@ -138,22 +158,51 @@ function NyttForslagModal({
     deal_type: "Engangs",
     next_step: "",
     deadline: "",
+    category: "Prosjekt",
   });
+
+  function velgProdukt(id: string) {
+    setProduktvalg(id);
+    if (id === MANUELT_VALG) return;
+    const p = katalog.find((k) => k.id === id);
+    if (!p) return;
+    setForm((f) => ({
+      ...f,
+      title: p.name,
+      value: p.default_price != null ? String(p.default_price) : f.value,
+    }));
+  }
 
   async function lagre(e: React.FormEvent) {
     e.preventDefault();
     if (!form.customer_id || !form.title) return;
     setLagrer(true);
     const { data: user } = await supabase.auth.getUser();
+    const owner = user.user?.id;
+
     await supabase.from("upsell_opportunities").insert({
-      ...form,
+      customer_id: form.customer_id,
+      title: form.title,
+      service: form.service || null,
       value: Number(form.value) || 0,
       probability: Number(form.probability),
+      deal_type: form.deal_type,
+      next_step: form.next_step || null,
       deadline: form.deadline || null,
-      service: form.service || null,
-      owner: user.user?.id,
+      owner,
       status: "Idé",
     });
+
+    // Nytt, manuelt produkt som skal huskes til neste gang
+    if (produktvalg === MANUELT_VALG && lagreINyKatalog && form.title) {
+      await supabase.from("product_catalog").insert({
+        owner,
+        name: form.title,
+        category: form.category || "Prosjekt",
+        default_price: Number(form.value) || null,
+      });
+    }
+
     setLagrer(false);
     onSaved();
   }
@@ -177,18 +226,57 @@ function NyttForslagModal({
             ))}
           </select>
         </div>
+
+        <div>
+          <label className={labelCls}>Produkt / tjeneste fra katalog</label>
+          <select className={inputCls} value={produktvalg} onChange={(e) => velgProdukt(e.target.value)}>
+            <option value={MANUELT_VALG}>— Skriv inn manuelt —</option>
+            {katalog.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.category ? `${p.category} — ` : ""}
+                {p.name}
+                {p.default_price != null ? ` (${kr(p.default_price)})` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div>
           <label className={labelCls}>Tittel / mulighet</label>
           <input
             className={inputCls}
             value={form.title}
             onChange={(e) => setForm({ ...form, title: e.target.value })}
+            placeholder="F.eks. Server side tracking-oppsett"
             required
           />
         </div>
+
+        {produktvalg === MANUELT_VALG && form.title && (
+          <label className="flex items-center gap-2 text-[11.5px] text-charcoal -mt-1">
+            <input
+              type="checkbox"
+              checked={lagreINyKatalog}
+              onChange={(e) => setLagreINyKatalog(e.target.checked)}
+            />
+            Lagre «{form.title}» i produktkatalogen for senere bruk
+          </label>
+        )}
+
+        {produktvalg === MANUELT_VALG && lagreINyKatalog && (
+          <div>
+            <label className={labelCls}>Kategori (for katalogen)</label>
+            <input
+              className={inputCls}
+              value={form.category}
+              onChange={(e) => setForm({ ...form, category: e.target.value })}
+            />
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className={labelCls}>Knyttet tjeneste (valgfritt)</label>
+            <label className={labelCls}>Knyttet tjeneste-status (valgfritt)</label>
             <select
               className={inputCls}
               value={form.service}

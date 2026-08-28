@@ -84,6 +84,14 @@ export interface CustomerService {
   updated_at: string;
 }
 
+export interface ProductCatalogItem {
+  id: string;
+  name: string;
+  category: string | null;
+  description: string | null;
+  default_price: number | null;
+}
+
 export const MERSALG_KOLONNER: Mersalgsstatus[] = [
   "Idé",
   "Sendt tilbud",
