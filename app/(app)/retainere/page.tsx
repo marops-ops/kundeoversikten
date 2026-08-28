@@ -3,8 +3,12 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import Pill from "@/components/Pill";
-import { kr, timer, pct, dato, monthRange } from "@/lib/format";
+import { kr, timer, pct } from "@/lib/format";
+
+function inneverendeManed() {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
+}
 
 export default function RetainerePage() {
   const supabase = createClient();
@@ -13,17 +17,14 @@ export default function RetainerePage() {
 
   useEffect(() => {
     (async () => {
-      const { start, end } = monthRange(0);
-      const [{ data: retainers }, { data: entries }] = await Promise.all([
+      const maned = inneverendeManed();
+      const [{ data: retainers }, { data: loggetTimer }] = await Promise.all([
         supabase.from("retainers").select("*, customers(name, logo_url, brand_color)").order("created_at"),
-        supabase.from("time_entries").select("customer_id, hours, type").gte("entry_date", start).lte("entry_date", end).eq("type", "Retainer"),
+        supabase.from("retainer_month_hours").select("*").eq("year_month", maned),
       ]);
 
       const brukt = new Map<string, number>();
-      (entries ?? []).forEach((e) => {
-        if (!e.customer_id) return;
-        brukt.set(e.customer_id, (brukt.get(e.customer_id) ?? 0) + Number(e.hours));
-      });
+      (loggetTimer ?? []).forEach((h) => brukt.set(h.customer_id, Number(h.hours)));
 
       const beriket = (retainers ?? []).map((r) => {
         const used = brukt.get(r.customer_id) ?? 0;
@@ -49,7 +50,7 @@ export default function RetainerePage() {
       </div>
 
       <div className="bg-cream rounded-sm shadow-sm overflow-x-auto">
-        <table className="w-full text-[12.5px] min-w-[760px]">
+        <table className="w-full text-[12.5px] min-w-[700px]">
           <thead>
             <tr className="text-left text-[10.5px] font-display tracking-[0.05em] uppercase text-charcoal border-b border-[#E2DDD2]">
               <th className="px-4 py-3">Kunde</th>
@@ -58,7 +59,6 @@ export default function RetainerePage() {
               <th className="px-4 py-3">Brukt (mnd)</th>
               <th className="px-4 py-3">Forbruk</th>
               <th className="px-4 py-3">Eff. timepris</th>
-              <th className="px-4 py-3">Fornyelse</th>
               <th className="px-4 py-3">Status</th>
             </tr>
           </thead>
@@ -73,13 +73,22 @@ export default function RetainerePage() {
                 <td className="px-4 py-2.5 text-charcoal">{kr(r.monthly_price)}</td>
                 <td className="px-4 py-2.5 text-charcoal">{timer(r.hour_budget)} t</td>
                 <td className="px-4 py-2.5 text-charcoal">{timer(r.used)} t</td>
-                <td className={`px-4 py-2.5 font-display ${r.forbruk > 1 ? "text-rose" : r.forbruk > 0.85 ? "text-brown" : "text-sage"}`}>
+                <td
+                  className={`px-4 py-2.5 font-display ${
+                    r.forbruk > 1 ? "text-rose" : r.forbruk > 0.85 ? "text-brown" : "text-sage"
+                  }`}
+                >
                   {pct(r.forbruk)}
                 </td>
                 <td className="px-4 py-2.5 text-charcoal">{r.effektivPris ? kr(r.effektivPris) : "—"}</td>
-                <td className="px-4 py-2.5 text-charcoal">{dato(r.renewal_date)}</td>
                 <td className="px-4 py-2.5">
-                  <Pill value={r.status} />
+                  <span
+                    className={`inline-block px-2 py-0.5 rounded-full text-[10.5px] font-medium ${
+                      r.status === "Aktiv" ? "bg-sage text-white" : "bg-charcoal text-white"
+                    }`}
+                  >
+                    {r.status === "Aktiv" ? "Aktiv" : "Ikke aktiv"}
+                  </span>
                 </td>
               </tr>
             ))}

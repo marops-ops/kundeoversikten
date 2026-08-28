@@ -6,23 +6,23 @@ import { createClient } from "@/lib/supabase/client";
 import {
   LayoutDashboard,
   Users,
+  Zap,
   Clock,
   Repeat,
   TrendingUp,
   Briefcase,
   BarChart3,
-  Receipt,
   LogOut,
 } from "lucide-react";
 
 const LENKER = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/kunder", label: "Kunder", icon: Users },
+  { href: "/hurtiglogging", label: "Hurtiglogging", icon: Zap },
   { href: "/timelogg", label: "Timelogg", icon: Clock },
   { href: "/retainere", label: "Retainere", icon: Repeat },
   { href: "/mersalg", label: "Mersalg", icon: TrendingUp },
   { href: "/prosjekter", label: "Prosjekter", icon: Briefcase },
-  { href: "/fakturering", label: "Fakturering", icon: Receipt },
   { href: "/rapporter", label: "Rapporter", icon: BarChart3 },
 ];
 

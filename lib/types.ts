@@ -94,6 +94,13 @@ export interface ProductCatalogItem {
   default_price: number | null;
 }
 
+export interface RetainerMonthHours {
+  id: string;
+  customer_id: string;
+  year_month: string;
+  hours: number;
+}
+
 export const MERSALG_KOLONNER: Mersalgsstatus[] = [
   "Idé",
   "Sendt tilbud",

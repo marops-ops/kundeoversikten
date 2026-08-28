@@ -8,7 +8,7 @@ import { inputCls, labelCls, btnPrimary } from "@/lib/ui";
 import { timer, dato } from "@/lib/format";
 import { Trash2 } from "lucide-react";
 
-const TYPER: Timetype[] = ["Retainer", "Mersalg", "Prosjekt", "Internt", "Ikke fakturerbart"];
+const TYPER: Timetype[] = ["Mersalg", "Prosjekt", "Internt", "Ikke fakturerbart"];
 
 type Periode = "Denne mnd" | "Kvartal" | "Halvår" | "År" | "Alt";
 
@@ -32,7 +32,7 @@ export default function TimeloggPage() {
   const [form, setForm] = useState({
     entry_date: new Date().toISOString().slice(0, 10),
     customer_id: "",
-    type: "Retainer" as Timetype,
+    type: "Prosjekt" as Timetype,
     task: "",
     hours: "",
     billable: true,

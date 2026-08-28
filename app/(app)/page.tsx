@@ -1,12 +1,12 @@
 import { createClient } from "@/lib/supabase/server";
 import KpiCard from "@/components/KpiCard";
-import Pill from "@/components/Pill";
-import KundeOversiktRad from "@/components/KundeOversiktRad";
-import { kr, pct, timer, dato, monthFromParam } from "@/lib/format";
+import { kr, pct, timer, monthFromParam } from "@/lib/format";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Zap } from "lucide-react";
 
 export const dynamic = "force-dynamic";
+
+const PROSJEKT_TIMEPRIS = 1650;
 
 export default async function DashboardPage({
   searchParams,
@@ -20,17 +20,17 @@ export default async function DashboardPage({
   const [
     { data: customers },
     { data: retainers },
+    { data: retainerHours },
     { data: timeEntriesMonth },
     { data: upsell },
     { data: projects },
-    { data: lastEntries },
   ] = await Promise.all([
     supabase.from("customers").select("*").order("name"),
     supabase.from("retainers").select("*, customers(name)").eq("status", "Aktiv"),
+    supabase.from("retainer_month_hours").select("*").eq("year_month", monthParam),
     supabase.from("time_entries").select("*").gte("entry_date", start).lte("entry_date", end),
     supabase.from("upsell_opportunities").select("*, customers(name)"),
     supabase.from("projects").select("*"),
-    supabase.from("time_entries").select("customer_id, entry_date").order("entry_date", { ascending: false }),
   ]);
 
   const customerList = customers ?? [];
@@ -39,13 +39,26 @@ export default async function DashboardPage({
   const upsellList = upsell ?? [];
   const projectList = projects ?? [];
 
+  // Hurtiglogging (retainer_month_hours) er autoritativ kilde for retainer-timer.
+  const hurtigTimer = new Map<string, number>();
+  (retainerHours ?? []).forEach((h) => hurtigTimer.set(h.customer_id, Number(h.hours)));
+
+  // Prosjekttimer denne perioden, per kunde — verdsettes til 1650,-/t
+  const prosjektTimerPerKunde = new Map<string, number>();
+  entries
+    .filter((e) => e.type === "Prosjekt" && e.customer_id)
+    .forEach((e) => {
+      prosjektTimerPerKunde.set(
+        e.customer_id!,
+        (prosjektTimerPerKunde.get(e.customer_id!) ?? 0) + Number(e.hours)
+      );
+    });
+  const prosjektTimerTotalt = [...prosjektTimerPerKunde.values()].reduce((s, t) => s + t, 0);
+  const prosjektTimeverdi = prosjektTimerTotalt * PROSJEKT_TIMEPRIS;
+
   const mrr = retainerList.reduce((s, r) => s + Number(r.monthly_price ?? 0), 0);
   const hourBudget = retainerList.reduce((s, r) => s + Number(r.hour_budget ?? 0), 0);
-
-  const retainerHoursUsed = entries
-    .filter((e) => e.type === "Retainer")
-    .reduce((s, e) => s + Number(e.hours), 0);
-
+  const retainerHoursUsed = retainerList.reduce((s, r) => s + (hurtigTimer.get(r.customer_id) ?? 0), 0);
   const utilization = hourBudget > 0 ? retainerHoursUsed / hourBudget : 0;
 
   const openUpsell = upsellList.filter((u) => u.status !== "Vunnet" && u.status !== "Tapt");
@@ -54,10 +67,9 @@ export default async function DashboardPage({
     0
   );
 
-  // "Verdi denne måneden": retainer-inntekt + vunnet mersalg + manuelt tilførte
-  // prosjekter denne perioden. Prosjekter som kom AUTOMATISK fra et vunnet
-  // mersalg telles ikke separat her — verdien er allerede med i "vunnet mersalg",
-  // så vi unngår å telle den samme kronen to ganger.
+  // "Verdi denne måneden": retainer-MRR + vunnet mersalg + manuelle prosjekter
+  // + verdi av loggede prosjekttimer. Prosjekter som kom AUTOMATISK fra et
+  // vunnet mersalg telles ikke separat (verdien ligger allerede i "vunnet mersalg").
   const wonUpsellPeriode = upsellList
     .filter((u) => u.status === "Vunnet" && u.updated_at >= start && u.updated_at <= end + "T23:59:59")
     .reduce((s, u) => s + Number(u.value ?? 0), 0);
@@ -70,16 +82,11 @@ export default async function DashboardPage({
         p.created_at.slice(0, 10) <= end
     )
     .reduce((s, p) => s + Number(p.budget ?? 0), 0);
-  const deliveredProjectsPeriode = projectList
-    .filter((p) => p.status === "Levert")
-    .reduce((s, p) => s + Number(p.budget ?? 0), 0);
-  const verdiDenneManeden = mrr + wonUpsellPeriode + manueltProsjektsalgPeriode;
+  const verdiDenneManeden = mrr + wonUpsellPeriode + manueltProsjektsalgPeriode + prosjektTimeverdi;
 
   const overBudget = retainerList
     .map((r) => {
-      const used = entries
-        .filter((e) => e.customer_id === r.customer_id && e.type === "Retainer")
-        .reduce((s, e) => s + Number(e.hours), 0);
+      const used = hurtigTimer.get(r.customer_id) ?? 0;
       const forbruk = r.hour_budget > 0 ? used / r.hour_budget : 0;
       return { ...r, used, forbruk };
     })
@@ -88,50 +95,33 @@ export default async function DashboardPage({
 
   const underUtilized = retainerList
     .map((r) => {
-      const used = entries
-        .filter((e) => e.customer_id === r.customer_id && e.type === "Retainer")
-        .reduce((s, e) => s + Number(e.hours), 0);
+      const used = hurtigTimer.get(r.customer_id) ?? 0;
       const forbruk = r.hour_budget > 0 ? used / r.hour_budget : 0;
       return { ...r, used, forbruk };
     })
     .filter((r) => r.forbruk < 0.6 && r.hour_budget > 0)
     .sort((a, b) => a.forbruk - b.forbruk);
 
-  const in60Days = new Date();
-  in60Days.setDate(in60Days.getDate() + 60);
-  const renewals = retainerList
-    .filter((r) => r.renewal_date && new Date(r.renewal_date) <= in60Days)
-    .sort((a, b) => (a.renewal_date! > b.renewal_date! ? 1 : -1));
-
   const topOpen = [...openUpsell].sort((a, b) => Number(b.value) - Number(a.value)).slice(0, 6);
 
-  const lastSeen = new Map<string, string>();
-  (lastEntries ?? []).forEach((e) => {
-    if (e.customer_id && !lastSeen.has(e.customer_id)) lastSeen.set(e.customer_id, e.entry_date);
-  });
-  const in30Days = new Date();
-  in30Days.setDate(in30Days.getDate() - 30);
-  const stilleKunder = retainerList
-    .map((r) => {
-      const siste = lastSeen.get(r.customer_id);
-      return { ...r, siste };
-    })
-    .filter((r) => !r.siste || new Date(r.siste) < in30Days)
-    .sort((a, b) => (a.siste ?? "").localeCompare(b.siste ?? ""));
+  const ikkeLoggetDenneManeden = retainerList
+    .filter((r) => !hurtigTimer.has(r.customer_id) || hurtigTimer.get(r.customer_id) === 0)
+    .sort((a, b) => ((a as any).customers?.name ?? "").localeCompare((b as any).customers?.name ?? ""));
 
-  // Kundeoversikt-rad: timer logget i perioden + nåværende totalverdi (retainer + prosjekter)
+  // Kundeoversikt-rad: retainer-timer (Hurtiglogging) + prosjekttimer denne perioden,
+  // og nåværende totalverdi (retainer + løpende prosjekter)
   const kundeOversikt = customerList.map((k) => {
     const retainer = retainerList.find((r) => r.customer_id === k.id);
-    const hoursLogged = entries
-      .filter((e) => e.customer_id === k.id)
-      .reduce((s, e) => s + Number(e.hours), 0);
+    const retainerTimerBrukt = hurtigTimer.get(k.id) ?? 0;
+    const prosjektTimerBrukt = prosjektTimerPerKunde.get(k.id) ?? 0;
+    const hoursLogged = retainerTimerBrukt + prosjektTimerBrukt;
     const budget = retainer?.hour_budget ?? 0;
-    const forbruk = budget > 0 ? hoursLogged / budget : 0;
+    const forbruk = budget > 0 ? retainerTimerBrukt / budget : 0;
     const prosjektverdi = projectList
       .filter((p) => p.customer_id === k.id && p.status !== "Stoppet")
       .reduce((s, p) => s + Number(p.budget ?? 0), 0);
     const totalverdi = (retainer?.monthly_price ?? 0) + prosjektverdi;
-    return { ...k, hoursLogged, budget, forbruk, totalverdi };
+    return { ...k, hoursLogged, budget, forbruk, totalverdi, harRetainer: !!retainer };
   });
 
   return (
@@ -141,27 +131,32 @@ export default async function DashboardPage({
           <div className="font-display text-[22px] text-dark">Kundeoversikt</div>
           <div className="text-[12px] text-charcoal mt-1 capitalize">{label}</div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
           <Link
-            href={`/?month=${prevParam}`}
-            className="p-1.5 rounded-sm border border-lightsage text-charcoal hover:border-dark hover:text-dark"
+            href="/hurtiglogging"
+            className="flex items-center gap-1.5 text-[11.5px] bg-dark text-white px-3 py-1.5 rounded-sm hover:bg-[#232630]"
           >
-            <ChevronLeft size={15} />
+            <Zap size={13} /> Hurtiglogging
           </Link>
-          {!isCurrentMonth && (
+          <div className="flex items-center gap-1">
             <Link
-              href="/"
-              className="text-[11px] text-charcoal underline px-1.5"
+              href={`/?month=${prevParam}`}
+              className="p-1.5 rounded-sm border border-lightsage text-charcoal hover:border-dark hover:text-dark"
             >
-              I dag
+              <ChevronLeft size={15} />
             </Link>
-          )}
-          <Link
-            href={`/?month=${nextParam}`}
-            className="p-1.5 rounded-sm border border-lightsage text-charcoal hover:border-dark hover:text-dark"
-          >
-            <ChevronRight size={15} />
-          </Link>
+            {!isCurrentMonth && (
+              <Link href="/" className="text-[11px] text-charcoal underline px-1.5">
+                I dag
+              </Link>
+            )}
+            <Link
+              href={`/?month=${nextParam}`}
+              className="p-1.5 rounded-sm border border-lightsage text-charcoal hover:border-dark hover:text-dark"
+            >
+              <ChevronRight size={15} />
+            </Link>
+          </div>
         </div>
       </div>
 
@@ -169,23 +164,46 @@ export default async function DashboardPage({
         <KpiCard label="Verdi denne måneden" value={kr(verdiDenneManeden)} accent="sage" />
         <KpiCard label="MRR — aktive retainere" value={kr(mrr)} accent="dark" />
         <KpiCard label="Timebudsjett i perioden" value={timer(hourBudget)} accent="dark" />
-        <KpiCard label="Timer brukt i perioden" value={timer(retainerHoursUsed)} accent="brown" />
+        <KpiCard label="Retainer-timer brukt" value={timer(retainerHoursUsed)} accent="brown" />
         <KpiCard label="Utnyttelse" value={pct(utilization)} accent={utilization > 0.9 ? "rose" : "sage"} />
         <KpiCard label="Vektet mersalg-pipeline" value={kr(weightedPipeline)} accent="brown" />
         <KpiCard label="Vunnet mersalg i perioden" value={kr(wonUpsellPeriode)} accent="sage" />
-        <KpiCard label="Manuelt prosjektsalg i perioden" value={kr(manueltProsjektsalgPeriode)} accent="sage" />
-        <KpiCard label="Leverte prosjekter (totalt)" value={kr(deliveredProjectsPeriode)} accent="dark" />
+        <KpiCard
+          label={`Prosjekttimer (${timer(prosjektTimerTotalt)} t × 1650,-)`}
+          value={kr(prosjektTimeverdi)}
+          accent="sage"
+        />
       </div>
 
       {/* KUNDEOVERSIKT-RAD */}
       <div className="bg-cream rounded-sm shadow-sm overflow-hidden">
         <div className="px-4 py-2.5 border-b border-[#E2DDD2] font-display text-[10.5px] tracking-[0.1em] uppercase text-charcoal">
-          Alle kunder — timer i perioden og verdi akkurat nå
+          Alle kunder — timer i perioden (retainer + prosjekt) og verdi akkurat nå
         </div>
         <div className="overflow-x-auto">
           <div className="min-w-[900px]">
             {kundeOversikt.map((k) => (
-              <KundeOversiktRad key={k.id} kunde={k} />
+              <Link
+                key={k.id}
+                href={`/kunder/${k.id}`}
+                className="flex items-center gap-4 px-4 py-2 border-b border-[#E2DDD2] last:border-0 hover:bg-white/60 text-[12.5px]"
+              >
+                <span className="w-[160px] shrink-0 truncate text-dark">{k.name}</span>
+                <div className="flex-1 flex items-center gap-2">
+                  <div className="flex-1 bg-white rounded-full h-2 overflow-hidden">
+                    <div
+                      className={`h-full ${
+                        k.forbruk > 1 ? "bg-rose" : k.forbruk > 0.85 ? "bg-brown" : "bg-sage"
+                      }`}
+                      style={{ width: `${Math.min(100, k.forbruk * 100)}%` }}
+                    />
+                  </div>
+                  <span className="text-[11px] text-charcoal w-[100px] shrink-0 text-right">
+                    {k.harRetainer ? `${timer(k.hoursLogged)} / ${timer(k.budget)} t` : `${timer(k.hoursLogged)} t`}
+                  </span>
+                </div>
+                <span className="font-display text-dark w-[110px] shrink-0 text-right">{kr(k.totalverdi)}</span>
+              </Link>
             ))}
             {kundeOversikt.length === 0 && (
               <div className="px-4 py-4 text-[12px] text-charcoal italic">Ingen kunder ennå.</div>
@@ -195,22 +213,12 @@ export default async function DashboardPage({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Block tittel="OVER TIMEBUDSJETT" accent="rose">
+        <Block tittel="OVER TIMEBUDSJETT (RETAINER)" accent="rose">
           {overBudget.length === 0 ? (
             <Tom tekst="Alt innenfor budsjett ✓" />
           ) : (
             overBudget.map((r) => (
               <Rad key={r.id} venstre={(r as any).customers?.name ?? "—"} hoyre={pct(r.forbruk)} fremhevet />
-            ))
-          )}
-        </Block>
-
-        <Block tittel="FORNYELSER NESTE 60 DAGER" accent="brown">
-          {renewals.length === 0 ? (
-            <Tom tekst="Ingen fornyelser innen 60 dager" />
-          ) : (
-            renewals.map((r) => (
-              <Rad key={r.id} venstre={(r as any).customers?.name ?? "—"} hoyre={dato(r.renewal_date)} />
             ))
           )}
         </Block>
@@ -239,17 +247,12 @@ export default async function DashboardPage({
           )}
         </Block>
 
-        <Block tittel="STILLE KUNDER (INGEN TIMER PÅ 30+ DAGER)" accent="rose">
-          {stilleKunder.length === 0 ? (
-            <Tom tekst="Alle aktive retainere har fersk timeføring ✓" />
+        <Block tittel="IKKE HURTIGLOGGET DENNE MÅNEDEN" accent="rose">
+          {ikkeLoggetDenneManeden.length === 0 ? (
+            <Tom tekst="Alle aktive retainere har timer logget ✓" />
           ) : (
-            stilleKunder.map((r) => (
-              <Rad
-                key={r.id}
-                venstre={(r as any).customers?.name ?? "—"}
-                hoyre={r.siste ? dato(r.siste) : "Aldri ført"}
-                fremhevet
-              />
+            ikkeLoggetDenneManeden.map((r) => (
+              <Rad key={r.id} venstre={(r as any).customers?.name ?? "—"} hoyre="0 t" fremhevet />
             ))
           )}
         </Block>

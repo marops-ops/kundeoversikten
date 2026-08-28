@@ -13,6 +13,19 @@ function periodeStart(p: Periode): Date {
   return new Date(now.getFullYear(), 0, 1);
 }
 
+// Genererer 'YYYY-MM' for hver måned fra en startdato og frem til i dag,
+// slik at vi kan slå opp riktige Hurtiglogging-rader for perioden.
+function manederIPerioden(start: Date): string[] {
+  const maneder: string[] = [];
+  const now = new Date();
+  const d = new Date(start.getFullYear(), start.getMonth(), 1);
+  while (d <= now) {
+    maneder.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    d.setMonth(d.getMonth() + 1);
+  }
+  return maneder;
+}
+
 export default function RapporterPage() {
   const supabase = createClient();
   const [periode, setPeriode] = useState<Periode>("Kvartal");
@@ -27,17 +40,25 @@ export default function RapporterPage() {
 
   useEffect(() => {
     (async () => {
-      const start = periodeStart(periode).toISOString().slice(0, 10);
+      const startDato = periodeStart(periode);
+      const start = startDato.toISOString().slice(0, 10);
+      const maneder = manederIPerioden(startDato);
 
-      const [{ data: entries }, { data: upsell }, { data: projects }, { data: retainers }] = await Promise.all([
-        supabase.from("time_entries").select("*, customers(name)").gte("entry_date", start),
-        supabase.from("upsell_opportunities").select("*").eq("status", "Vunnet").gte("updated_at", start),
-        supabase.from("projects").select("*").eq("status", "Levert"),
-        supabase.from("retainers").select("*").eq("status", "Aktiv"),
-      ]);
+      const [{ data: entries }, { data: upsell }, { data: projects }, { data: retainers }, { data: retainerTimer }] =
+        await Promise.all([
+          supabase.from("time_entries").select("*, customers(name)").gte("entry_date", start),
+          supabase.from("upsell_opportunities").select("*").eq("status", "Vunnet").gte("updated_at", start),
+          supabase.from("projects").select("*").eq("status", "Levert"),
+          supabase.from("retainers").select("*, customers(name)").eq("status", "Aktiv"),
+          supabase.from("retainer_month_hours").select("*, customers(name)").in("year_month", maneder),
+        ]);
 
-      const totalHours = (entries ?? []).reduce((s, e) => s + Number(e.hours), 0);
-      const billableHours = (entries ?? []).filter((e) => e.billable).reduce((s, e) => s + Number(e.hours), 0);
+      const totalHours =
+        (entries ?? []).reduce((s, e) => s + Number(e.hours), 0) +
+        (retainerTimer ?? []).reduce((s, h) => s + Number(h.hours), 0);
+      const billableHours =
+        (entries ?? []).filter((e) => e.billable).reduce((s, e) => s + Number(e.hours), 0) +
+        (retainerTimer ?? []).reduce((s, h) => s + Number(h.hours), 0);
       const wonUpsell = (upsell ?? []).reduce((s, u) => s + Number(u.value), 0);
       const deliveredProjects = (projects ?? []).reduce((s, p) => s + Number(p.budget), 0);
 
@@ -48,6 +69,10 @@ export default function RapporterPage() {
       (entries ?? []).forEach((e: any) => {
         const navn = e.customers?.name ?? "Ukjent";
         perKundeMap.set(navn, (perKundeMap.get(navn) ?? 0) + Number(e.hours));
+      });
+      (retainerTimer ?? []).forEach((h: any) => {
+        const navn = h.customers?.name ?? "Ukjent";
+        perKundeMap.set(navn, (perKundeMap.get(navn) ?? 0) + Number(h.hours));
       });
 
       setData({

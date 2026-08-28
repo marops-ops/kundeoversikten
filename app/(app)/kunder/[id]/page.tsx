@@ -83,6 +83,13 @@ export default function KundeDetaljPage({ params }: { params: Promise<{ id: stri
     hent();
   }
 
+  async function slettRetainer() {
+    if (!retainer) return;
+    if (!confirm(`Fjerne retaineren for ${kunde?.name}? Dette kan ikke angres.`)) return;
+    await supabase.from("retainers").delete().eq("id", retainer.id);
+    hent();
+  }
+
   const totalTimer = timer_.reduce((s, t) => s + Number(t.hours), 0);
 
   return (
@@ -192,7 +199,7 @@ export default function KundeDetaljPage({ params }: { params: Promise<{ id: stri
 
       {/* RETAINER */}
       <Seksjon tittel="Retainer">
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-3 items-end">
           <Felt label="Månedspris">
             <input
               type="number"
@@ -202,23 +209,35 @@ export default function KundeDetaljPage({ params }: { params: Promise<{ id: stri
             />
           </Felt>
           <Felt label="Timebudsjett/mnd">
-            <input
-              type="number"
-              step="0.5"
-              className={inputCls}
-              defaultValue={retainer?.hour_budget ?? 0}
-              onBlur={(e) => lagreRetainer({ hour_budget: Number(e.target.value) })}
-            />
+            <div className="flex gap-1.5">
+              <input
+                type="number"
+                step="0.5"
+                className={inputCls}
+                defaultValue={retainer?.hour_budget ?? 0}
+                onBlur={(e) => lagreRetainer({ hour_budget: Number(e.target.value) })}
+              />
+              <button
+                type="button"
+                title="Foreslå timer ut fra 1650,-/t og gjeldende månedspris"
+                onClick={() => {
+                  const foreslatt = Math.round(((retainer?.monthly_price ?? 0) / 1650) * 10) / 10;
+                  lagreRetainer({ hour_budget: foreslatt });
+                }}
+                className="shrink-0 px-2 text-[10.5px] border border-lightsage rounded-sm text-charcoal hover:border-dark hover:text-dark whitespace-nowrap"
+              >
+                Foreslå
+              </button>
+            </div>
           </Felt>
           <Felt label="Status">
             <select
               className={inputCls}
-              defaultValue={retainer?.status ?? "Aktiv"}
-              onChange={(e) => lagreRetainer({ status: e.target.value as any })}
+              value={retainer?.status === "Aktiv" ? "Aktiv" : "Ikke aktiv"}
+              onChange={(e) => lagreRetainer({ status: e.target.value === "Aktiv" ? "Aktiv" : "Pause" })}
             >
-              {["Aktiv", "Pause", "Oppsagt", "Avsluttet"].map((s) => (
-                <option key={s}>{s}</option>
-              ))}
+              <option value="Aktiv">Aktiv</option>
+              <option value="Ikke aktiv">Ikke aktiv</option>
             </select>
           </Felt>
           <Felt label="Startdato">
@@ -229,24 +248,20 @@ export default function KundeDetaljPage({ params }: { params: Promise<{ id: stri
               onBlur={(e) => lagreRetainer({ start_date: e.target.value || null })}
             />
           </Felt>
-          <Felt label="Fornyelse">
-            <input
-              type="date"
-              className={inputCls}
-              defaultValue={retainer?.renewal_date ?? ""}
-              onBlur={(e) => lagreRetainer({ renewal_date: e.target.value || null })}
-            />
-          </Felt>
-          <Felt label="Fakturadag">
-            <input
-              type="number"
-              className={inputCls}
-              defaultValue={retainer?.invoice_day ?? ""}
-              onBlur={(e) => lagreRetainer({ invoice_day: Number(e.target.value) || null })}
-            />
-          </Felt>
         </div>
-        {!retainer && <div className="text-[11px] text-charcoal mt-2 italic">Ingen retainer opprettet ennå — felt lagres når du fyller ut.</div>}
+        {!retainer && (
+          <div className="text-[11px] text-charcoal mt-2 italic">
+            Ingen retainer opprettet ennå — felt lagres når du fyller ut.
+          </div>
+        )}
+        {retainer && (
+          <button
+            onClick={slettRetainer}
+            className={`${btnDanger} flex items-center gap-1.5 mt-3`}
+          >
+            <Trash2 size={13} /> Fjern retainer helt
+          </button>
+        )}
       </Seksjon>
 
       {/* TJENESTER */}
