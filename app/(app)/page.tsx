@@ -68,8 +68,12 @@ export default async function DashboardPage({
   );
 
   // "Verdi denne måneden": retainer-MRR + vunnet mersalg + manuelle prosjekter
-  // + verdi av loggede prosjekttimer. Prosjekter som kom AUTOMATISK fra et
-  // vunnet mersalg telles ikke separat (verdien ligger allerede i "vunnet mersalg").
+  // + verdi av loggede prosjekttimer. Prosjektverdi telles i måneden prosjektet
+  // faktisk ble FULLFØRT (completed_date), ikke måneden du registrerte det —
+  // slik at et prosjekt du legger inn i august, men som var ferdig i juni,
+  // korrekt havner i juni-tallene og ikke dukker opp i august.
+  // Prosjekter som kom AUTOMATISK fra et vunnet mersalg telles ikke separat her
+  // (verdien ligger allerede i "vunnet mersalg", unngår dobbelttelling).
   const wonUpsellPeriode = upsellList
     .filter((u) => u.status === "Vunnet" && u.updated_at >= start && u.updated_at <= end + "T23:59:59")
     .reduce((s, u) => s + Number(u.value ?? 0), 0);
@@ -77,9 +81,10 @@ export default async function DashboardPage({
     .filter(
       (p) =>
         !p.from_upsell &&
-        p.created_at &&
-        p.created_at.slice(0, 10) >= start &&
-        p.created_at.slice(0, 10) <= end
+        p.status === "Levert" &&
+        p.completed_date &&
+        p.completed_date >= start &&
+        p.completed_date <= end
     )
     .reduce((s, p) => s + Number(p.budget ?? 0), 0);
   const verdiDenneManeden = mrr + wonUpsellPeriode + manueltProsjektsalgPeriode + prosjektTimeverdi;
@@ -168,6 +173,7 @@ export default async function DashboardPage({
         <KpiCard label="Utnyttelse" value={pct(utilization)} accent={utilization > 0.9 ? "rose" : "sage"} />
         <KpiCard label="Vektet mersalg-pipeline" value={kr(weightedPipeline)} accent="brown" />
         <KpiCard label="Vunnet mersalg i perioden" value={kr(wonUpsellPeriode)} accent="sage" />
+        <KpiCard label="Leverte prosjekter i perioden" value={kr(manueltProsjektsalgPeriode)} accent="sage" />
         <KpiCard
           label={`Prosjekttimer (${timer(prosjektTimerTotalt)} t × 1650,-)`}
           value={kr(prosjektTimeverdi)}

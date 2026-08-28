@@ -30,8 +30,19 @@ export default function ProsjekterPage() {
     hent();
   }, []);
 
-  async function endreStatus(id: string, status: Prosjektstatus) {
-    await supabase.from("projects").update({ status }).eq("id", id);
+  async function endreStatus(id: string, status: Prosjektstatus, eksisterendeDato?: string | null) {
+    const felt: any = { status };
+    // Sett fullført-dato automatisk til i dag når prosjektet markeres Levert
+    // (kun hvis det ikke allerede har en — du kan justere den etterpå for å bakover-datere)
+    if (status === "Levert" && !eksisterendeDato) {
+      felt.completed_date = new Date().toISOString().slice(0, 10);
+    }
+    await supabase.from("projects").update(felt).eq("id", id);
+    hent();
+  }
+
+  async function endreFullfortDato(id: string, dato: string) {
+    await supabase.from("projects").update({ completed_date: dato || null }).eq("id", id);
     hent();
   }
 
@@ -64,10 +75,21 @@ export default function ProsjekterPage() {
             <div className="text-[11px] text-charcoal">{p.customers?.name ?? "Internt"} {p.type ? `· ${p.type}` : ""}</div>
             {p.hour_budget && <div className="text-[11px] text-charcoal">Timebudsjett: {timer(p.hour_budget)} t</div>}
             {p.deadline && <div className="text-[11px] text-charcoal">Frist: {dato(p.deadline)}</div>}
+            {(p.status === "Levert" || p.completed_date) && (
+              <div className="flex items-center gap-1.5">
+                <label className="text-[10.5px] text-charcoal shrink-0">Fullført:</label>
+                <input
+                  type="date"
+                  defaultValue={p.completed_date ?? ""}
+                  onBlur={(e) => endreFullfortDato(p.id, e.target.value)}
+                  className="text-[11px] border border-lightsage rounded-sm px-1.5 py-0.5 bg-white"
+                />
+              </div>
+            )}
             <div className="flex items-center justify-between mt-1">
               <select
                 value={p.status}
-                onChange={(e) => endreStatus(p.id, e.target.value as Prosjektstatus)}
+                onChange={(e) => endreStatus(p.id, e.target.value as Prosjektstatus, p.completed_date)}
                 className="text-[11px] border border-lightsage rounded-sm px-1.5 py-1 bg-white"
               >
                 {STATUSER.map((s) => (

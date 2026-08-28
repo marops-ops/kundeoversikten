@@ -76,6 +76,7 @@ export interface Project {
   notes: string | null;
   from_upsell?: boolean;
   created_at?: string;
+  completed_date?: string | null;
 }
 
 export interface CustomerService {

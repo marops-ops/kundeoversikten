@@ -48,7 +48,11 @@ export default function RapporterPage() {
         await Promise.all([
           supabase.from("time_entries").select("*, customers(name)").gte("entry_date", start),
           supabase.from("upsell_opportunities").select("*").eq("status", "Vunnet").gte("updated_at", start),
-          supabase.from("projects").select("*").eq("status", "Levert"),
+          supabase
+            .from("projects")
+            .select("*")
+            .eq("status", "Levert")
+            .gte("completed_date", start),
           supabase.from("retainers").select("*, customers(name)").eq("status", "Aktiv"),
           supabase.from("retainer_month_hours").select("*, customers(name)").in("year_month", maneder),
         ]);
