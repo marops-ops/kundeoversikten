@@ -5,17 +5,20 @@ import { createClient } from "@/lib/supabase/client";
 import { Customer, Project, Prosjektstatus } from "@/lib/types";
 import Modal from "@/components/Modal";
 import Pill from "@/components/Pill";
-import { inputCls, labelCls, btnPrimary } from "@/lib/ui";
+import { inputCls, labelCls, btnPrimary, btnDanger } from "@/lib/ui";
 import { kr, dato, timer } from "@/lib/format";
-import { Plus } from "lucide-react";
+import { Plus, Pencil, Trash2 } from "lucide-react";
 
 const STATUSER: Prosjektstatus[] = ["Planlagt", "Pågår", "Venter på kunde", "Levert", "Stoppet"];
+
+type ProsjektRad = Project & { customers?: { name: string } };
 
 export default function ProsjekterPage() {
   const supabase = createClient();
   const [kunder, setKunder] = useState<Customer[]>([]);
-  const [prosjekter, setProsjekter] = useState<(Project & { customers?: { name: string } })[]>([]);
+  const [prosjekter, setProsjekter] = useState<ProsjektRad[]>([]);
   const [modalApen, setModalApen] = useState(false);
+  const [redigerer, setRedigerer] = useState<ProsjektRad | null>(null);
 
   async function hent() {
     const [{ data: k }, { data: p }] = await Promise.all([
@@ -32,8 +35,6 @@ export default function ProsjekterPage() {
 
   async function endreStatus(id: string, status: Prosjektstatus, eksisterendeDato?: string | null) {
     const felt: any = { status };
-    // Sett fullført-dato automatisk til i dag når prosjektet markeres Levert
-    // (kun hvis det ikke allerede har en — du kan justere den etterpå for å bakover-datere)
     if (status === "Levert" && !eksisterendeDato) {
       felt.completed_date = new Date().toISOString().slice(0, 10);
     }
@@ -41,8 +42,14 @@ export default function ProsjekterPage() {
     hent();
   }
 
-  async function endreFullfortDato(id: string, dato: string) {
-    await supabase.from("projects").update({ completed_date: dato || null }).eq("id", id);
+  async function endreFullfortDato(id: string, verdi: string) {
+    await supabase.from("projects").update({ completed_date: verdi || null }).eq("id", id);
+    hent();
+  }
+
+  async function slettProsjekt(p: ProsjektRad) {
+    if (!confirm(`Slette prosjektet «${p.name}»? Dette kan ikke angres.`)) return;
+    await supabase.from("projects").delete().eq("id", p.id);
     hent();
   }
 
@@ -70,9 +77,27 @@ export default function ProsjekterPage() {
           <div key={p.id} className="bg-cream rounded-sm p-4 shadow-sm flex flex-col gap-2.5">
             <div className="flex items-start justify-between gap-2">
               <div className="text-[13.5px] text-dark leading-snug">{p.name}</div>
-              <span className="font-display text-[13px] text-dark shrink-0">{kr(p.budget)}</span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="font-display text-[13px] text-dark">{kr(p.budget)}</span>
+                <button
+                  onClick={() => setRedigerer(p)}
+                  className="text-charcoal hover:text-dark"
+                  title="Rediger prosjekt"
+                >
+                  <Pencil size={13} />
+                </button>
+                <button
+                  onClick={() => slettProsjekt(p)}
+                  className="text-charcoal hover:text-rose"
+                  title="Slett prosjekt"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
             </div>
-            <div className="text-[11px] text-charcoal">{p.customers?.name ?? "Internt"} {p.type ? `· ${p.type}` : ""}</div>
+            <div className="text-[11px] text-charcoal">
+              {p.customers?.name ?? "Internt"} {p.type ? `· ${p.type}` : ""}
+            </div>
             {p.hour_budget && <div className="text-[11px] text-charcoal">Timebudsjett: {timer(p.hour_budget)} t</div>}
             {p.deadline && <div className="text-[11px] text-charcoal">Frist: {dato(p.deadline)}</div>}
             {(p.status === "Levert" || p.completed_date) && (
@@ -107,7 +132,7 @@ export default function ProsjekterPage() {
       )}
 
       {modalApen && (
-        <NyttProsjektModal
+        <ProsjektModal
           kunder={kunder}
           onClose={() => setModalApen(false)}
           onSaved={() => {
@@ -116,53 +141,75 @@ export default function ProsjekterPage() {
           }}
         />
       )}
+
+      {redigerer && (
+        <ProsjektModal
+          kunder={kunder}
+          eksisterende={redigerer}
+          onClose={() => setRedigerer(null)}
+          onSaved={() => {
+            setRedigerer(null);
+            hent();
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function NyttProsjektModal({
+function ProsjektModal({
   kunder,
+  eksisterende,
   onClose,
   onSaved,
 }: {
   kunder: Customer[];
+  eksisterende?: ProsjektRad;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const supabase = createClient();
   const [lagrer, setLagrer] = useState(false);
   const [form, setForm] = useState({
-    name: "",
-    customer_id: "",
-    type: "",
-    budget: "",
-    hour_budget: "",
-    start_date: "",
-    deadline: "",
-    notes: "",
+    name: eksisterende?.name ?? "",
+    customer_id: eksisterende?.customer_id ?? "",
+    type: eksisterende?.type ?? "",
+    budget: eksisterende ? String(eksisterende.budget) : "",
+    hour_budget: eksisterende?.hour_budget ? String(eksisterende.hour_budget) : "",
+    start_date: eksisterende?.start_date ?? "",
+    deadline: eksisterende?.deadline ?? "",
+    notes: eksisterende?.notes ?? "",
   });
 
   async function lagre(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name) return;
     setLagrer(true);
-    const { data: user } = await supabase.auth.getUser();
-    await supabase.from("projects").insert({
-      ...form,
+
+    const felt = {
+      name: form.name,
       customer_id: form.customer_id || null,
+      type: form.type || null,
       budget: Number(form.budget) || 0,
       hour_budget: form.hour_budget ? Number(form.hour_budget) : null,
       start_date: form.start_date || null,
       deadline: form.deadline || null,
-      owner: user.user?.id,
-      status: "Planlagt",
-    });
+      notes: form.notes || null,
+    };
+
+    if (eksisterende) {
+      await supabase.from("projects").update(felt).eq("id", eksisterende.id);
+    } else {
+      const { data: user } = await supabase.auth.getUser();
+      await supabase.from("projects").insert({ ...felt, owner: user.user?.id, status: "Planlagt" });
+    }
+
     setLagrer(false);
     onSaved();
   }
 
   return (
-    <Modal title="Nytt prosjekt" onClose={onClose}>
+    <Modal title={eksisterende ? "Rediger prosjekt" : "Nytt prosjekt"} onClose={onClose}>
       <form onSubmit={lagre} className="flex flex-col gap-3">
         <div>
           <label className={labelCls}>Prosjektnavn</label>
@@ -211,6 +258,26 @@ function NyttProsjektModal({
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
+            <label className={labelCls}>Timebudsjett (valgfritt)</label>
+            <input
+              type="number"
+              step="0.5"
+              className={inputCls}
+              value={form.hour_budget}
+              onChange={(e) => setForm({ ...form, hour_budget: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Notat</label>
+            <input
+              className={inputCls}
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
             <label className={labelCls}>Start</label>
             <input
               type="date"
@@ -230,7 +297,7 @@ function NyttProsjektModal({
           </div>
         </div>
         <button type="submit" disabled={lagrer} className={btnPrimary}>
-          {lagrer ? "Lagrer…" : "Lagre prosjekt"}
+          {lagrer ? "Lagrer…" : eksisterende ? "Lagre endringer" : "Lagre prosjekt"}
         </button>
       </form>
     </Modal>

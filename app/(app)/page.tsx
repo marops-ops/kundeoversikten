@@ -186,17 +186,19 @@ export default async function DashboardPage({
         <div className="px-4 py-2.5 border-b border-[#E2DDD2] font-display text-[10.5px] tracking-[0.1em] uppercase text-charcoal">
           Alle kunder — timer i perioden (retainer + prosjekt) og verdi akkurat nå
         </div>
-        <div className="overflow-x-auto">
-          <div className="min-w-[900px]">
-            {kundeOversikt.map((k) => (
+        <div className="p-3">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6">
+            {kundeOversikt.map((k, idx) => (
               <Link
                 key={k.id}
                 href={`/kunder/${k.id}`}
-                className="flex items-center gap-4 px-4 py-2 border-b border-[#E2DDD2] last:border-0 hover:bg-white/60 text-[12.5px]"
+                className={`flex items-center gap-3 py-2 text-[12.5px] hover:bg-white/60 ${
+                  idx % 2 === 0 ? "lg:border-r lg:border-[#E2DDD2] lg:pr-6" : "lg:pl-2"
+                }`}
               >
-                <span className="w-[160px] shrink-0 truncate text-dark">{k.name}</span>
-                <div className="flex-1 flex items-center gap-2">
-                  <div className="flex-1 bg-white rounded-full h-2 overflow-hidden">
+                <span className="w-[110px] shrink-0 truncate text-dark">{k.name}</span>
+                <div className="flex-1 flex items-center gap-1.5 min-w-0">
+                  <div className="flex-1 bg-white rounded-full h-2 overflow-hidden min-w-[40px]">
                     <div
                       className={`h-full ${
                         k.forbruk > 1 ? "bg-rose" : k.forbruk > 0.85 ? "bg-brown" : "bg-sage"
@@ -204,11 +206,13 @@ export default async function DashboardPage({
                       style={{ width: `${Math.min(100, k.forbruk * 100)}%` }}
                     />
                   </div>
-                  <span className="text-[11px] text-charcoal w-[100px] shrink-0 text-right">
-                    {k.harRetainer ? `${timer(k.hoursLogged)} / ${timer(k.budget)} t` : `${timer(k.hoursLogged)} t`}
+                  <span className="text-[10.5px] text-charcoal w-[80px] shrink-0 text-right">
+                    {k.harRetainer ? `${timer(k.hoursLogged)}/${timer(k.budget)} t` : `${timer(k.hoursLogged)} t`}
                   </span>
                 </div>
-                <span className="font-display text-dark w-[110px] shrink-0 text-right">{kr(k.totalverdi)}</span>
+                <span className="font-display text-dark w-[85px] shrink-0 text-right text-[11.5px]">
+                  {kr(k.totalverdi)}
+                </span>
               </Link>
             ))}
             {kundeOversikt.length === 0 && (
