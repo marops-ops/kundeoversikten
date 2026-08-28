@@ -56,11 +56,13 @@ export default function KundeDetaljPage({ params }: { params: Promise<{ id: stri
   }
 
   async function endreTjeneste(navn: string, status: Tjenestestatus) {
+    const { data: user } = await supabase.auth.getUser();
     await supabase
       .from("customer_services")
-      .update({ status })
-      .eq("customer_id", id)
-      .eq("service_name", navn);
+      .upsert(
+        { customer_id: id, service_name: navn, status, owner: user.user?.id },
+        { onConflict: "customer_id,service_name" }
+      );
     hent();
   }
 

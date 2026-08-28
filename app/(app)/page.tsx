@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import KpiCard from "@/components/KpiCard";
 import Pill from "@/components/Pill";
+import KundeOversiktRad from "@/components/KundeOversiktRad";
 import { kr, pct, timer, dato, monthFromParam } from "@/lib/format";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -53,14 +54,26 @@ export default async function DashboardPage({
     0
   );
 
-  // "Verdi denne måneden": retainer-inntekt + vunnet mersalg + leverte prosjekter i valgt måned
+  // "Verdi denne måneden": retainer-inntekt + vunnet mersalg + manuelt tilførte
+  // prosjekter denne perioden. Prosjekter som kom AUTOMATISK fra et vunnet
+  // mersalg telles ikke separat her — verdien er allerede med i "vunnet mersalg",
+  // så vi unngår å telle den samme kronen to ganger.
   const wonUpsellPeriode = upsellList
     .filter((u) => u.status === "Vunnet" && u.updated_at >= start && u.updated_at <= end + "T23:59:59")
     .reduce((s, u) => s + Number(u.value ?? 0), 0);
+  const manueltProsjektsalgPeriode = projectList
+    .filter(
+      (p) =>
+        !p.from_upsell &&
+        p.created_at &&
+        p.created_at.slice(0, 10) >= start &&
+        p.created_at.slice(0, 10) <= end
+    )
+    .reduce((s, p) => s + Number(p.budget ?? 0), 0);
   const deliveredProjectsPeriode = projectList
     .filter((p) => p.status === "Levert")
     .reduce((s, p) => s + Number(p.budget ?? 0), 0);
-  const verdiDenneManeden = mrr + wonUpsellPeriode;
+  const verdiDenneManeden = mrr + wonUpsellPeriode + manueltProsjektsalgPeriode;
 
   const overBudget = retainerList
     .map((r) => {
@@ -160,6 +173,7 @@ export default async function DashboardPage({
         <KpiCard label="Utnyttelse" value={pct(utilization)} accent={utilization > 0.9 ? "rose" : "sage"} />
         <KpiCard label="Vektet mersalg-pipeline" value={kr(weightedPipeline)} accent="brown" />
         <KpiCard label="Vunnet mersalg i perioden" value={kr(wonUpsellPeriode)} accent="sage" />
+        <KpiCard label="Manuelt prosjektsalg i perioden" value={kr(manueltProsjektsalgPeriode)} accent="sage" />
         <KpiCard label="Leverte prosjekter (totalt)" value={kr(deliveredProjectsPeriode)} accent="dark" />
       </div>
 
@@ -171,25 +185,7 @@ export default async function DashboardPage({
         <div className="overflow-x-auto">
           <div className="min-w-[900px]">
             {kundeOversikt.map((k) => (
-              <Link
-                key={k.id}
-                href={`/kunder/${k.id}`}
-                className="flex items-center gap-4 px-4 py-2 border-b border-[#E2DDD2] last:border-0 hover:bg-white/60 text-[12.5px]"
-              >
-                <span className="w-[160px] shrink-0 truncate text-dark">{k.name}</span>
-                <div className="flex-1 flex items-center gap-2">
-                  <div className="flex-1 bg-white rounded-full h-2 overflow-hidden">
-                    <div
-                      className={`h-full ${k.forbruk > 1 ? "bg-rose" : k.forbruk > 0.85 ? "bg-brown" : "bg-sage"}`}
-                      style={{ width: `${Math.min(100, k.forbruk * 100)}%` }}
-                    />
-                  </div>
-                  <span className="text-[11px] text-charcoal w-[90px] shrink-0 text-right">
-                    {timer(k.hoursLogged)} / {timer(k.budget)} t
-                  </span>
-                </div>
-                <span className="font-display text-dark w-[110px] shrink-0 text-right">{kr(k.totalverdi)}</span>
-              </Link>
+              <KundeOversiktRad key={k.id} kunde={k} />
             ))}
             {kundeOversikt.length === 0 && (
               <div className="px-4 py-4 text-[12px] text-charcoal italic">Ingen kunder ennå.</div>
